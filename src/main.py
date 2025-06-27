@@ -28,13 +28,14 @@ def search_voices():
         # Fetch data from MySQL
         cur = mysql.connection.cursor()
         cur.execute(
-            "SELECT path, MFCCs, pitch, gender_label FROM audio_features")
+            "SELECT path, MFCCs, pitch, gender_label FROM output_features")
         db_data = cur.fetchall()
         cur.close()
 
         # Convert fetched data to list of dictionaries
         db_data = [
             {"path": row[0], "MFCCs": row[1],
+
                 "pitch": row[2], "gender_label": row[3]}
             for row in db_data
         ]
@@ -52,6 +53,7 @@ def search_voices():
         print("results:", results)
         return jsonify({"results": results})
     except Exception as e:
+        print(f'error: {e}')
         return jsonify({"error": str(e)}), 500
 
 

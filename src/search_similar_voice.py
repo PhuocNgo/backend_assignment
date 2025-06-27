@@ -2,13 +2,13 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from MFCC import extract_features
-from pitch import funcPitch
+from pitch import funcPitch_pydub
 import ast
 
 
 def get_feature_vector(audio_path):
     mfcc = extract_features(audio_path)
-    pitch = funcPitch(audio_path)
+    pitch = funcPitch_pydub(audio_path)
     return np.concatenate([mfcc, pitch]) if mfcc is not None and pitch is not None else None
 
 
@@ -26,37 +26,20 @@ def search_similar_voices(input_file, db_data):
             print("Database is empty.")
             return [], [], []
 
-        # Split database into male and female based on gender_label
-        df_male = df[df['gender_label'] == 'Nam'].reset_index(drop=True)
-        df_female = df[df['gender_label'] == 'Nu'].reset_index(drop=True)
-
-        # Extract input features and estimate gender
+        # Extract input features
         input_features = get_feature_vector(input_file)
         if input_features is None:
             print("Failed to extract features from input file.")
             return [], [], []
 
-        input_pitch = funcPitch(input_file)
-        if input_pitch is None:
-            print("Failed to extract pitch from input file.")
-            return [], [], []
-        input_gender = estimate_gender(input_pitch)
-
-        # Select appropriate database based on input gender
-        target_df = df_male if input_gender == "Nam" else df_female
-
-        if target_df.empty:
-            print(f"No data available for gender {input_gender} in database.")
-            return [], [], []
-
         # Prepare database features
         db_features = []
         valid_indices = []
-        for idx, row in target_df.iterrows():
+        for idx, row in df.iterrows():
             try:
                 mfcc = np.array(ast.literal_eval(row['MFCCs']))
                 pitch = np.array(ast.literal_eval(row['pitch']))
-                if mfcc.size == 120 and pitch.size == 4:  # Ensure correct dimensions
+                if mfcc.size == 13 and pitch.size == 7:  # Ensure correct dimensions
                     db_features.append(np.concatenate([mfcc, pitch]))
                     valid_indices.append(idx)
             except (ValueError, SyntaxError):
@@ -64,8 +47,7 @@ def search_similar_voices(input_file, db_data):
         db_features = np.array(db_features)
 
         if len(db_features) == 0:
-            print(
-                f"No valid feature vectors for gender {input_gender} in database.")
+            print("No valid feature vectors in database.")
             return [], [], []
 
         # Compute similarities
@@ -74,12 +56,11 @@ def search_similar_voices(input_file, db_data):
         # Get top 3
         top_3_indices = np.argsort(similarities)[-3:][::-1]
         top_3_scores = similarities[top_3_indices]
-        # Map valid_indices to target_df rows
-        top_3_files = target_df.iloc[[valid_indices[i]
-                                      for i in top_3_indices]]['path'].values
+        # Map valid_indices to df rows
+        top_3_files = df.iloc[[valid_indices[i]
+                               for i in top_3_indices]]['path'].values
         top_3_genders = [
-            estimate_gender(np.array(ast.literal_eval(
-                target_df.iloc[valid_indices[i]]['pitch'])))
+            df.iloc[valid_indices[i]]['gender_label']
             for i in top_3_indices
         ]
 

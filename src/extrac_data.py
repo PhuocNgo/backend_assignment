@@ -1,40 +1,30 @@
 import re
-import pandas as pd
-import numpy as np
-import json
-from sqlalchemy import create_engine
-from sqlalchemy.exc import SQLAlchemyError
+import pymysql
 
-from read_file import list_wav_files
+import readFile
 from MFCC import extract_features
-from pitch import funcPitch
+import pitch
+dir = "D:\Hoc\CSDL DPT\wav"
 
-dir = "D:/Hoc/CSDL DPT/wav"
-
-# Get list of WAV files
-audio_list = list_wav_files(dir)
+audio_list = readFile.list_wav_files(dir)
 
 data = []
 for audio in audio_list:
     audio_path = dir + "/" + audio
-    print(f"Processing: {audio_path}")
+    print(audio_path)
 
-    # Extract MFCC features (120D vector)
+    # Extract MFCC features
     mfcc_features = extract_features(audio_path)
 
-    # Extract pitch features (4D vector)
-    pitch_features = funcPitch(audio_path)
-
-    # Skip if feature extraction fails
-    if mfcc_features is None or pitch_features is None:
-        print(f"Skipping {audio_path}: Failed to extract features")
-        continue
+    # Extract pitch features
+    pitch_features = pitch.funcPitch_pydub(audio_path)
 
     # Extract labels from the file name
     match = re.match(r'(\d+-\d+|\d+\+)_([A-Za-z]+)_\d+\.wav', audio)
     if match:
-        range_label = match.group(1)  # e.g., "41-60" or "60+"
-        gender_label = match.group(2)  # e.g., "Nam" or "Nu"
+        # Extract range label (e.g., "41-60" or "60+")
+        range_label = match.group(1)
+        gender_label = match.group(2)  # Extract gender label (e.g., "Nam")
     else:
         range_label = "Unknown"
         gender_label = "Unknown"
@@ -49,44 +39,46 @@ mfccs = []
 range_labels = []
 gender_labels = []
 
+# Kết nối tới MySQL
+connection = pymysql.connect(
+    host="localhost",
+    user="root",
+    password="fuokqo160802",
+    database="csdl_dpt"
+)
+
+cursor = connection.cursor()
+
+# Tạo bảng nếu chưa tồn tại
+create_table_query = """
+CREATE TABLE IF NOT EXISTS output_features (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    path VARCHAR(255) NOT NULL,
+    pitch TEXT NOT NULL,
+    MFCCs TEXT NOT NULL,
+    range_label VARCHAR(50),
+    gender_label VARCHAR(50)
+);
+"""
+cursor.execute(create_table_query)
+
+# Chèn dữ liệu vào bảng
+insert_query = """
+INSERT INTO output_features (path, pitch, MFCCs, range_label, gender_label)
+VALUES (%s, %s, %s, %s, %s)
+"""
+
 for path, pitch_feature, mfcc_feature, range_label, gender_label in data:
-    paths.append(path)
-    # Convert pitch array to JSON string
-    pitches.append(json.dumps(pitch_feature.tolist()))
-    # Convert MFCC array to JSON string
-    mfccs.append(json.dumps(mfcc_feature.tolist()))
-    range_labels.append(range_label)
-    gender_labels.append(gender_label)
+    cursor.execute(insert_query, (
+        path,
+        str(pitch_feature),
+        str(mfcc_feature.tolist()),
+        range_label,
+        gender_label
+    ))
 
-# Create DataFrame
-df_new = pd.DataFrame({
-    'path': paths,
-    'pitch': pitches,
-    'MFCCs': mfccs,
-    'range_label': range_labels,
-    'gender_label': gender_labels
-})
+connection.commit()
+cursor.close()
+connection.close()
 
-# Save to MySQL database
-# Replace with your MySQL connection details
-mysql_user = "root"
-mysql_password = "fuokqo160802"
-mysql_host = "localhost"
-mysql_database = "csdl_dpt"
-table_name = "audio_features"
-
-try:
-    # Create SQLAlchemy engine
-    engine = create_engine(
-        f"mysql+mysqlconnector://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_database}")
-
-    # Save DataFrame to MySQL
-    df_new.to_sql(table_name, con=engine, if_exists='replace', index=False)
-    print(f"Data saved to MySQL table: {table_name}")
-
-except SQLAlchemyError as e:
-    print(f"Error saving to MySQL: {str(e)}")
-finally:
-    # Dispose of the engine to close connections
-    if 'engine' in locals():
-        engine.dispose()
+print("Dữ liệu đã được chèn vào MySQL thành công.")

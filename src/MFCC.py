@@ -6,43 +6,40 @@ from scipy.signal import resample
 target_sample_rate = 44100
 
 
-def extract_features(audio_file, n_fft=2048, hop_length=512, n_mfcc=20):
+def extract_features(audio_file, n_fft=128, hop_length=32, n_mfcc=13):
     try:
-        # Load audio file
         y, sr = sf.read(audio_file)
 
-        # Convert to mono if stereo
+        # Nếu là stereo, chuyển thành mono
         if y.ndim > 1:
             y = y.mean(axis=1)
 
-        # Resample to target sample rate
+        # Chuẩn hóa sample rate
         if sr != target_sample_rate:
             y = resample(y, int(len(y) * target_sample_rate / sr))
             sr = target_sample_rate
 
-        # Take first 5 seconds
+        # Lấy đúng 5 giây đầu
         samples_5_sec = target_sample_rate * 5
         y_5_sec = y[:samples_5_sec]
+
+        # Nếu file ngắn hơn 5s, pad 0
         if len(y_5_sec) < samples_5_sec:
             y_5_sec = np.pad(y_5_sec, (0, samples_5_sec - len(y_5_sec)))
 
-        # Extract MFCC
+        # Trích xuất MFCC
         mfccs = librosa.feature.mfcc(
             y=y_5_sec, sr=sr, n_mfcc=n_mfcc, n_fft=n_fft, hop_length=hop_length)
 
-        # Extract delta and delta-delta features
-        delta_mfccs = librosa.feature.delta(mfccs)
-        delta2_mfccs = librosa.feature.delta(mfccs, order=2)
+        # Chuẩn hóa từng hệ số MFCC theo thời gian
+        mfccs_normalized = (mfccs - np.mean(mfccs, axis=1, keepdims=True)
+                            ) / (np.std(mfccs, axis=1, keepdims=True) + 1e-6)
 
-        # Combine features
-        combined = np.concatenate([mfccs, delta_mfccs, delta2_mfccs], axis=0)
+        # Lấy trung bình mỗi hệ số → vector 13 chiều
+        mean_mfcc = np.mean(mfccs_normalized, axis=1)
 
-        # Normalize and compute statistics
-        mean_features = np.mean(combined, axis=1)
-        std_features = np.std(combined, axis=1)
-
-        return np.concatenate([mean_features, std_features])
+        return mean_mfcc  # Vector 13 chiều
 
     except Exception as e:
-        print(f"Error processing file {audio_file}: {e}")
+        print(f"Lỗi khi xử lý file {audio_file}: {e}")
         return None
